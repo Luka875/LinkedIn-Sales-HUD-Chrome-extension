@@ -9,6 +9,7 @@ Sales HUD is a lightweight Chrome extension that adds a private caller-intellige
 - Profile summary scraped from visible LinkedIn content
 - Per-profile call status and notes saved with `chrome.storage.local`
 - One-click copy for a call opener and lead brief
+- Toolbar popup with a manual **Show HUD** button for troubleshooting or first load
 - Draggable and minimizable panel
 - No build step, remote code, analytics, or third-party services
 
@@ -19,6 +20,7 @@ Sales HUD is a lightweight Chrome extension that adds a private caller-intellige
 3. Click **Load unpacked**.
 4. Select this repository folder.
 5. Open or refresh a LinkedIn profile URL such as `https://www.linkedin.com/in/example/`.
+6. If the panel does not appear automatically, click the Sales HUD extension icon in Chrome and then click **Show HUD on this tab**.
 
 If the HUD does not appear after updating files, return to `chrome://extensions` and click the reload icon on the extension card. Chrome does not automatically pick up local file changes.
 
@@ -29,6 +31,7 @@ The extension runs three content scripts on LinkedIn. The HUD only displays on p
 - `src/timezone-map.js` maps common city, region, and country strings to IANA time zones and turns local time into a calling recommendation.
 - `src/scraper.js` extracts visible profile details such as name, headline, location, about text, and experience snippets.
 - `src/hud.js` renders the Sales HUD, persists notes/status locally, and provides copy actions.
+- `popup/popup.html` and `popup/popup.js` provide the toolbar popup and manual HUD injection button.
 
 LinkedIn changes its markup frequently, so the scraper intentionally uses several broad selectors and graceful fallbacks rather than depending on a single brittle DOM path.
 
@@ -40,4 +43,5 @@ Sales HUD stores only the notes and call status you enter for each profile, plus
 
 - `storage`: saves profile-specific notes, status, and HUD position locally.
 - `clipboardWrite`: powers the copy opener and copy brief buttons.
-- `https://www.linkedin.com/*`: allows the HUD content scripts to run on LinkedIn profile pages.
+- `activeTab` and `scripting`: allow the toolbar popup to show the HUD on the active LinkedIn profile tab.
+- `*://*.linkedin.com/*`: allows the HUD content scripts to run on LinkedIn profile pages.

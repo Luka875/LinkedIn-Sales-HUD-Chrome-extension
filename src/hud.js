@@ -720,6 +720,41 @@
     await updateProfile(getProfileSnapshot());
   }
 
+  function bindRuntimeMessages() {
+    if (
+      window.__salesHudMessagesBound ||
+      !window.chrome ||
+      !chrome.runtime ||
+      !chrome.runtime.onMessage
+    ) {
+      return;
+    }
+
+    window.__salesHudMessagesBound = true;
+
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (!message || message.type !== "saleshud:show") {
+        return false;
+      }
+
+      handleRouteChange()
+        .then(() => {
+          sendResponse({
+            ok: host.isConnected,
+            isProfilePage: isProfilePage()
+          });
+        })
+        .catch((error) => {
+          sendResponse({
+            ok: false,
+            error: error.message
+          });
+        });
+
+      return true;
+    });
+  }
+
   function patchHistoryEvents() {
     if (window.__salesHudHistoryPatched) {
       return;
@@ -739,6 +774,7 @@
   }
 
   async function start() {
+    bindRuntimeMessages();
     patchHistoryEvents();
     await handleRouteChange();
 
