@@ -32,6 +32,10 @@
     "australia",
     "singapore",
     "brazil",
+    "serbia",
+    "belgrade",
+    "beograd",
+    "novi sad",
     "new york",
     "san francisco",
     "los angeles",
@@ -140,6 +144,189 @@
     };
   }
 
+  function getDescriptionParts() {
+    const description = getMetaContent([
+      "meta[name='description']",
+      "meta[property='og:description']",
+      "meta[name='twitter:description']"
+    ]);
+
+    const viewProfileMatch = description.match(/View\s+(.+?)['’]s\s+profile\s+on\s+LinkedIn/i);
+
+    if (viewProfileMatch) {
+      return {
+        name: cleanText(viewProfileMatch[1]),
+        headline: ""
+      };
+    }
+
+    const profileMatch = description.match(/^(.+?)\s+-\s+(.+?)(?:\s+-\s+LinkedIn|\s+\|\s+LinkedIn|$)/i);
+
+    if (profileMatch) {
+      return {
+        name: cleanText(profileMatch[1]),
+        headline: cleanText(profileMatch[2])
+      };
+    }
+
+    return {
+      name: "",
+      headline: ""
+    };
+  }
+
+  function humanizeProfileSlug() {
+    const key = getProfileKey()
+      .replace(/[?#].*$/, "")
+      .replace(/[_+]+/g, "-");
+
+    const tokens = key
+      .split("-")
+      .filter(Boolean)
+      .filter((token) => !/\d/.test(token))
+      .filter((token) => !/^[a-f0-9]{6,}$/i.test(token))
+      .slice(0, 3);
+
+    if (!tokens.length) {
+      return "";
+    }
+
+    return tokens
+      .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  function normalizeJsonLdType(type) {
+    if (Array.isArray(type)) {
+      return type.map(normalizeJsonLdType).join(" ");
+    }
+
+    return cleanText(type).toLowerCase();
+  }
+
+  function collectJsonLdObjects(value, output) {
+    if (!value) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectJsonLdObjects(item, output));
+      return;
+    }
+
+    if (typeof value !== "object") {
+      return;
+    }
+
+    output.push(value);
+
+    if (value["@graph"]) {
+      collectJsonLdObjects(value["@graph"], output);
+    }
+
+    for (const nestedValue of Object.values(value)) {
+      if (nestedValue && typeof nestedValue === "object") {
+        collectJsonLdObjects(nestedValue, output);
+      }
+    }
+  }
+
+  function getJsonLdObjects() {
+    const objects = [];
+
+    for (const script of document.querySelectorAll("script[type='application/ld+json']")) {
+      try {
+        collectJsonLdObjects(JSON.parse(script.textContent || "{}"), objects);
+      } catch (error) {
+        // LinkedIn occasionally emits non-profile JSON-LD; ignore malformed entries.
+      }
+    }
+
+    return objects;
+  }
+
+  function getJsonValue(value) {
+    if (Array.isArray(value)) {
+      return value.map(getJsonValue).filter(Boolean).join(", ");
+    }
+
+    if (value && typeof value === "object") {
+      return cleanText(value.name || value["@id"] || value.text || "");
+    }
+
+    return cleanText(value);
+  }
+
+  function getJsonLdProfile() {
+    const person = getJsonLdObjects().find((item) => {
+      const type = normalizeJsonLdType(item["@type"]);
+      return type.includes("person") || type.includes("profilepage");
+    });
+
+    if (!person) {
+      return {
+        name: "",
+        headline: "",
+        location: "",
+        company: ""
+      };
+    }
+
+    const address = person.address || person.homeLocation || person.location;
+    const organization = person.worksFor || person.affiliation || person.memberOf;
+    const location = address && typeof address === "object"
+      ? [
+          address.addressLocality,
+          address.addressRegion,
+          address.addressCountry && getJsonValue(address.addressCountry)
+        ].map(cleanText).filter(Boolean).join(", ")
+      : getJsonValue(address);
+
+    return {
+      name: getJsonValue(person.name),
+      headline: getJsonValue(person.jobTitle || person.description),
+      location,
+      company: getJsonValue(organization)
+    };
+  }
+
+  function isVisibleElement(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+
+    const style = window.getComputedStyle(element);
+
+    return (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      Number(style.opacity) !== 0 &&
+      element.getClientRects().length > 0
+    );
+  }
+
+  function getVisibleTextLines(root) {
+    const scope = root || document.querySelector("main") || document.body;
+    const lines = [];
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const text = cleanText(node.nodeValue);
+
+        if (!text || !node.parentElement || !isVisibleElement(node.parentElement)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    while (walker.nextNode()) {
+      lines.push(walker.currentNode.nodeValue);
+    }
+
+    return uniqueLines(lines);
+  }
+
   function getVisibleLines(root) {
     if (!root) {
       return [];
@@ -179,15 +366,19 @@
     const topCard = getTopCard();
 
     if (!topCard) {
-      return [];
+      return getVisibleTextLines().slice(0, 80);
     }
 
-    const candidates = Array.from(topCard.querySelectorAll("h1, h2, span, div"))
+    const elementLines = Array.from(topCard.querySelectorAll("h1, h2, span, div"))
       .map((element) => cleanText(element.textContent))
       .flatMap((line) => line.split(/\n+/))
       .filter((line) => isUsefulLine(line) && !isTopCardNoise(line));
 
-    return uniqueLines(candidates);
+    return uniqueLines([
+      ...elementLines,
+      ...getVisibleTextLines(topCard),
+      ...getVisibleTextLines().slice(0, 80)
+    ]).filter((line) => !isTopCardNoise(line));
   }
 
   function findSection(label) {
@@ -221,11 +412,33 @@
   }
 
   function getName() {
-    return getNameFromDom() || getTitleParts().name;
+    const jsonLdProfile = getJsonLdProfile();
+    const titleParts = getTitleParts();
+    const descriptionParts = getDescriptionParts();
+    const visibleName = getTopCardLines().find((line) => {
+      const wordCount = line.split(/\s+/).length;
+      return (
+        wordCount >= 2 &&
+        wordCount <= 4 &&
+        /^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+$/.test(line)
+      );
+    });
+
+    return (
+      getNameFromDom() ||
+      jsonLdProfile.name ||
+      titleParts.name ||
+      descriptionParts.name ||
+      visibleName ||
+      humanizeProfileSlug()
+    );
   }
 
   function getHeadline() {
     const topCard = getTopCard();
+    const jsonLdProfile = getJsonLdProfile();
+    const titleParts = getTitleParts();
+    const descriptionParts = getDescriptionParts();
     const directHeadline = firstText([
       ".text-body-medium.break-words",
       ".pv-text-details__left-panel .text-body-medium",
@@ -233,24 +446,19 @@
       ".ph5 .mt2 .text-body-medium"
     ], topCard || document);
 
-    if (directHeadline) {
+    const name = getName();
+
+    if (directHeadline && looksLikeHeadline(directHeadline, name)) {
       return directHeadline;
     }
 
-    const name = getName();
-    const titleHeadline = getTitleParts().headline;
-    const topCardHeadline = getTopCardLines().find((line) => {
-      const normalizedLine = line.toLowerCase();
-      return (
-        line !== name &&
-        normalizedLine !== name.toLowerCase() &&
-        !looksLikeLocation(line) &&
-        !/@/.test(line) &&
-        !/^https?:\/\//i.test(line)
-      );
-    });
+    const headlineCandidates = getTopCardLines().filter((line) => looksLikeHeadline(line, name));
+    const topCardHeadline =
+      headlineCandidates.find((line) => line.includes("|")) ||
+      headlineCandidates[0] ||
+      "";
 
-    return topCardHeadline || titleHeadline;
+    return topCardHeadline || jsonLdProfile.headline || titleParts.headline || descriptionParts.headline;
   }
 
   function looksLikeLocation(line) {
@@ -268,7 +476,40 @@
     return LOCATION_KEYWORDS.some((keyword) => normalized.includes(keyword));
   }
 
+  function looksLikeWebsiteOrHandle(line) {
+    const text = cleanText(line);
+    return (
+      /^https?:\/\//i.test(text) ||
+      /^www\./i.test(text) ||
+      /^[a-z0-9-]+\.[a-z]{2,}(?:\/.*)?$/i.test(text) ||
+      /^@/.test(text)
+    );
+  }
+
+  function looksLikeHeadline(line, name) {
+    const text = cleanText(line);
+    const normalized = text.toLowerCase();
+
+    if (
+      !text ||
+      text === name ||
+      normalized === cleanText(name).toLowerCase() ||
+      looksLikeLocation(text) ||
+      looksLikeWebsiteOrHandle(text) ||
+      text.length < 8
+    ) {
+      return false;
+    }
+
+    return (
+      text.includes("|") ||
+      /\b(founder|sales|business|development|revenue|marketing|engineer|manager|director|lead|consultant|saas|b2b|reports?)\b/i.test(text) ||
+      text.split(/\s+/).length >= 4
+    );
+  }
+
   function getLocation() {
+    const jsonLdProfile = getJsonLdProfile();
     const directLocation = firstText([
       ".pv-text-details__left-panel span.text-body-small.inline.t-black--light.break-words",
       ".text-body-small.inline.t-black--light.break-words",
@@ -279,7 +520,13 @@
       return directLocation;
     }
 
-    return getTopCardLines().find(looksLikeLocation) || directLocation;
+    return (
+      (jsonLdProfile.location && looksLikeLocation(jsonLdProfile.location) ? jsonLdProfile.location : "") ||
+      getTopCardLines().find(looksLikeLocation) ||
+      getVisibleTextLines().find(looksLikeLocation) ||
+      directLocation ||
+      jsonLdProfile.location
+    );
   }
 
   function getAbout() {

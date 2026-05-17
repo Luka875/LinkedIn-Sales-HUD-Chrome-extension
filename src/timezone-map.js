@@ -105,6 +105,11 @@
       ]
     },
     {
+      timeZone: "Europe/Belgrade",
+      label: "Serbia Time",
+      keywords: ["serbia", "belgrade", "beograd", "novi sad", "nis", "niš", "kragujevac"]
+    },
+    {
       timeZone: "Asia/Dubai",
       label: "Gulf Time",
       keywords: ["dubai", "abu dhabi", "united arab emirates", "uae"]
