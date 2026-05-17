@@ -18,23 +18,32 @@
     ["do-not-call", "Do not call"]
   ];
 
-  const state = {
-    profile: getProfileSnapshot(),
-    settings: {
+  function defaultSettings() {
+    return {
       status: "new",
       notes: ""
-    },
+    };
+  }
+
+  const state = {
+    profile: getProfileSnapshot(),
+    settings: defaultSettings(),
     position: {
       top: 96,
       right: 24
     },
     minimized: false,
-    feedbackTimer: 0
+    feedbackTimer: 0,
+    lastUrl: window.location.href
   };
 
   const host = document.createElement("div");
   host.id = "sales-hud-root";
   const shadow = host.attachShadow({ mode: "open" });
+
+  function isProfilePage() {
+    return /^\/in\/[^/]+/i.test(window.location.pathname);
+  }
 
   function getProfileSnapshot() {
     if (window.SalesHudScraper && typeof window.SalesHudScraper.snapshot === "function") {
@@ -634,6 +643,16 @@
   }
 
   async function updateProfile(nextProfile) {
+    if (!isProfilePage()) {
+      unmountHud();
+      return;
+    }
+
+    if (!host.isConnected) {
+      await mountHud();
+      return;
+    }
+
     const previousKey = state.profile.profileKey;
     const previousFingerprint = JSON.stringify({
       name: state.profile.name,
@@ -659,25 +678,87 @@
     state.profile = nextProfile;
 
     if (nextProfile.profileKey !== previousKey) {
-      state.settings = {
-        status: "new",
-        notes: ""
-      };
+      state.settings = defaultSettings();
       await loadState();
     }
 
     render();
   }
 
-  async function start() {
-    document.documentElement.appendChild(host);
+  async function mountHud() {
+    state.profile = getProfileSnapshot();
+    state.settings = defaultSettings();
+
+    if (!host.isConnected) {
+      document.documentElement.appendChild(host);
+    }
+
     await loadState();
     render();
+  }
 
-    window.setInterval(refreshTimeCard, 60000);
+  function unmountHud() {
+    if (host.isConnected) {
+      host.remove();
+    }
+  }
+
+  async function handleRouteChange() {
+    const currentUrl = window.location.href;
+    state.lastUrl = currentUrl;
+
+    if (!isProfilePage()) {
+      unmountHud();
+      return;
+    }
+
+    if (!host.isConnected) {
+      await mountHud();
+      return;
+    }
+
+    await updateProfile(getProfileSnapshot());
+  }
+
+  function patchHistoryEvents() {
+    if (window.__salesHudHistoryPatched) {
+      return;
+    }
+
+    window.__salesHudHistoryPatched = true;
+
+    for (const methodName of ["pushState", "replaceState"]) {
+      const original = history[methodName];
+
+      history[methodName] = function patchedHistoryMethod() {
+        const result = original.apply(this, arguments);
+        window.dispatchEvent(new Event("saleshud:locationchange"));
+        return result;
+      };
+    }
+  }
+
+  async function start() {
+    patchHistoryEvents();
+    await handleRouteChange();
+
+    window.addEventListener("popstate", handleRouteChange);
+    window.addEventListener("saleshud:locationchange", handleRouteChange);
+
+    window.setInterval(() => {
+      if (state.lastUrl !== window.location.href) {
+        handleRouteChange();
+      }
+
+      refreshTimeCard();
+    }, 3000);
 
     if (window.SalesHudScraper && typeof window.SalesHudScraper.observeProfileChanges === "function") {
-      window.SalesHudScraper.observeProfileChanges(updateProfile);
+      window.SalesHudScraper.observeProfileChanges((nextProfile) => {
+        if (isProfilePage()) {
+          updateProfile(nextProfile);
+        }
+      });
     }
   }
 

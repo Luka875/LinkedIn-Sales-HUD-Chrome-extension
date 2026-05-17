@@ -4,7 +4,7 @@ Sales HUD is a lightweight Chrome extension that adds a private caller-intellige
 
 ## Features
 
-- Floating HUD on `linkedin.com/in/*` profile pages
+- Floating HUD on LinkedIn profile pages, including when LinkedIn changes pages without a full reload
 - Local-time and calling-window guidance inferred from the profile location
 - Profile summary scraped from visible LinkedIn content
 - Per-profile call status and notes saved with `chrome.storage.local`
@@ -18,11 +18,13 @@ Sales HUD is a lightweight Chrome extension that adds a private caller-intellige
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select this repository folder.
-5. Open a LinkedIn profile URL such as `https://www.linkedin.com/in/example/`.
+5. Open or refresh a LinkedIn profile URL such as `https://www.linkedin.com/in/example/`.
+
+If the HUD does not appear after updating files, return to `chrome://extensions` and click the reload icon on the extension card. Chrome does not automatically pick up local file changes.
 
 ## How it works
 
-The extension runs three content scripts on LinkedIn profile pages:
+The extension runs three content scripts on LinkedIn. The HUD only displays on profile URLs:
 
 - `src/timezone-map.js` maps common city, region, and country strings to IANA time zones and turns local time into a calling recommendation.
 - `src/scraper.js` extracts visible profile details such as name, headline, location, about text, and experience snippets.
