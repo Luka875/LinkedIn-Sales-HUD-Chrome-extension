@@ -72,11 +72,36 @@
     /^mutual connection/i
   ];
 
+  const LOCATION_HINTS = [
+    { pattern: /\bgreater toronto area\b/i, label: "Greater Toronto Area, Canada" },
+    { pattern: /\btoronto\b/i, label: "Toronto, Ontario, Canada" },
+    { pattern: /\bontario\b/i, label: "Ontario, Canada" },
+    { pattern: /\bcanada\b/i, label: "Canada" },
+    { pattern: /\bserbia\b/i, label: "Serbia" },
+    { pattern: /\bbelgrade\b|\bbeograd\b/i, label: "Belgrade, Serbia" },
+    { pattern: /\bnovi sad\b/i, label: "Novi Sad, Serbia" },
+    { pattern: /\bnew york\b/i, label: "New York, United States" },
+    { pattern: /\bsan francisco\b|\bbay area\b/i, label: "San Francisco Bay Area, United States" },
+    { pattern: /\blos angeles\b/i, label: "Los Angeles, United States" },
+    { pattern: /\blondon\b/i, label: "London, United Kingdom" },
+    { pattern: /\bparis\b/i, label: "Paris, France" },
+    { pattern: /\bberlin\b/i, label: "Berlin, Germany" },
+    { pattern: /\bsydney\b/i, label: "Sydney, Australia" }
+  ];
+
   function cleanText(value) {
     return String(value || "")
       .replace(/\u00a0/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function splitTextLines(value) {
+    return String(value || "")
+      .replace(/\u00a0/g, " ")
+      .split(/\n+/)
+      .map(cleanText)
+      .filter(Boolean);
   }
 
   function isUsefulLine(line) {
@@ -339,25 +364,21 @@
 
   function getViewportTextLines() {
     const selectors = [
-      "main h1",
-      "main h2",
-      "main h3",
-      "main span",
-      "main div",
-      "main p",
-      "section h1",
-      "section h2",
-      "section h3",
-      "section span",
-      "section div",
-      "section p"
+      "body h1",
+      "body h2",
+      "body h3",
+      "body span",
+      "body div",
+      "body p",
+      "body a",
+      "body button"
     ].join(",");
     const lines = [];
-    const maxLeft = Math.max(520, window.innerWidth * 0.68);
-    const maxTop = Math.max(430, window.innerHeight * 0.55);
+    const maxLeft = Math.max(760, window.innerWidth * 0.78);
+    const maxTop = Math.max(560, window.innerHeight * 0.72);
 
     for (const element of document.querySelectorAll(selectors)) {
-      if (!isVisibleElement(element)) {
+      if (!isVisibleElement(element) || element.closest("#sales-hud-root")) {
         continue;
       }
 
@@ -374,14 +395,55 @@
         continue;
       }
 
-      cleanText(element.innerText || element.textContent)
-        .split(/\n+/)
+      splitTextLines(element.innerText || element.textContent || element.getAttribute("aria-label") || element.getAttribute("title"))
+        .filter((line) => line.length > 1 && line.length < 180)
+        .forEach((line) => lines.push(line));
+    }
+
+    return uniqueLines([...lines, ...getAttributeTextLines()]).filter((line) => !isTopCardNoise(line));
+  }
+
+  function getAttributeTextLines() {
+    const lines = [];
+
+    for (const element of document.querySelectorAll("body [aria-label], body [title], body img[alt]")) {
+      if (element.closest("#sales-hud-root")) {
+        continue;
+      }
+
+      const rect = element.getBoundingClientRect();
+
+      if (
+        rect.top < 35 ||
+        rect.top > Math.max(620, window.innerHeight * 0.75) ||
+        rect.left > Math.max(820, window.innerWidth * 0.82)
+      ) {
+        continue;
+      }
+
+      [element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("alt")]
         .map(cleanText)
         .filter((line) => line.length > 1 && line.length < 180)
         .forEach((line) => lines.push(line));
     }
 
-    return uniqueLines(lines).filter((line) => !isTopCardNoise(line));
+    return uniqueLines(lines);
+  }
+
+  function detectKnownLocation(lines) {
+    for (const line of lines.map(normalizeLocationCandidate)) {
+      if (!line || isTopCardNoise(line)) {
+        continue;
+      }
+
+      for (const hint of LOCATION_HINTS) {
+        if (hint.pattern.test(line)) {
+          return line.length <= 80 ? line : hint.label;
+        }
+      }
+    }
+
+    return "";
   }
 
   function cleanNameCandidate(line) {
@@ -425,6 +487,8 @@
     const searchStart = nameIndex >= 0 ? nameIndex + 1 : 0;
     const searchWindow = lines.slice(searchStart, searchStart + 14);
     const location = normalizeLocationCandidate(
+      detectKnownLocation(searchWindow) ||
+      detectKnownLocation(lines) ||
       searchWindow.find((line) => looksLikeLocation(normalizeLocationCandidate(line))) ||
       lines.find((line) => looksLikeLocation(normalizeLocationCandidate(line))) ||
       ""
@@ -448,8 +512,7 @@
     }
 
     const candidates = Array.from(root.querySelectorAll("span[aria-hidden='true'], li, p"))
-      .map((element) => cleanText(element.textContent))
-      .flatMap((line) => line.split(/\n+/));
+      .flatMap((element) => splitTextLines(element.textContent));
 
     return uniqueLines(candidates);
   }
@@ -485,8 +548,7 @@
     }
 
     const elementLines = Array.from(topCard.querySelectorAll("h1, h2, span, div"))
-      .map((element) => cleanText(element.textContent))
-      .flatMap((line) => line.split(/\n+/))
+      .flatMap((element) => splitTextLines(element.innerText || element.textContent))
       .filter((line) => isUsefulLine(line) && !isTopCardNoise(line));
 
     return uniqueLines([
@@ -641,6 +703,8 @@
 
     return (
       visibleProfile.location ||
+      detectKnownLocation(getTopCardLines()) ||
+      detectKnownLocation(getVisibleTextLines()) ||
       (jsonLdProfile.location && looksLikeLocation(jsonLdProfile.location) ? jsonLdProfile.location : "") ||
       normalizeLocationCandidate(getTopCardLines().find((line) => looksLikeLocation(normalizeLocationCandidate(line)))) ||
       normalizeLocationCandidate(getVisibleTextLines().find((line) => looksLikeLocation(normalizeLocationCandidate(line)))) ||

@@ -154,6 +154,18 @@
     return lines.join("\n");
   }
 
+  function buildDebugSummary() {
+    return [
+      `URL: ${state.profile.url}`,
+      `Name: ${state.profile.name || "(missing)"}`,
+      `Headline: ${state.profile.headline || "(missing)"}`,
+      `Location: ${state.profile.location || "(missing)"}`,
+      `About: ${truncate(state.profile.about, 220) || "(missing)"}`,
+      "Visible text sample:",
+      ...(state.profile.debugLines || []).slice(0, 30).map((line, index) => `${index + 1}. ${line}`)
+    ].join("\n");
+  }
+
   function buildCallOpener() {
     const name = state.profile.name ? state.profile.name.split(/\s+/)[0] : "there";
     const company = state.profile.currentCompany || "your team";
@@ -226,6 +238,9 @@
           <span class="call-badge">${escapeHtml(timezoneDetails.callingWindow.label)}</span>
         </div>
         <p data-time-detail>${escapeHtml(timezoneDetails.callingWindow.detail)}</p>
+        <p class="timezone-note">
+          Source location: ${escapeHtml(state.profile.location || "not detected")}
+        </p>
         <p class="timezone-note ${confidenceClass}" title="${escapeHtml(timezoneDetails.guess.reason)}">
           ${escapeHtml(timezoneDetails.guess.label)} - ${escapeHtml(timezoneDetails.guess.timeZone)}
         </p>
@@ -479,6 +494,10 @@
         .minimized {
           width: 260px;
         }
+
+        .debug-button {
+          grid-column: 1 / -1;
+        }
       </style>
       <aside class="panel ${state.minimized ? "minimized" : ""}" aria-label="Sales HUD">
         <header class="header" data-drag-handle>
@@ -517,6 +536,7 @@
             <div class="actions">
               <button class="primary-button" type="button" data-action="copy-opener">Copy opener</button>
               <button class="secondary-button" type="button" data-action="copy-summary">Copy brief</button>
+              <button class="secondary-button debug-button" type="button" data-action="copy-debug">Copy debug info</button>
             </div>
 
             <div class="feedback" data-feedback>Saved locally in this browser.</div>
@@ -534,6 +554,7 @@
     const notesField = shadow.querySelector("[data-notes]");
     const openerButton = shadow.querySelector("[data-action='copy-opener']");
     const summaryButton = shadow.querySelector("[data-action='copy-summary']");
+    const debugButton = shadow.querySelector("[data-action='copy-debug']");
     const dragHandle = shadow.querySelector("[data-drag-handle]");
 
     if (toggleButton) {
@@ -565,6 +586,10 @@
 
     if (summaryButton) {
       summaryButton.addEventListener("click", () => copyText(buildLeadSummary(), "Lead brief copied."));
+    }
+
+    if (debugButton) {
+      debugButton.addEventListener("click", () => copyText(buildDebugSummary(), "Debug info copied."));
     }
 
     if (dragHandle) {
