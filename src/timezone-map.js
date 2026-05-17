@@ -65,6 +65,7 @@
         "toronto",
         "greater toronto area",
         "ontario",
+        "canada",
         "montreal",
         "ottawa",
         "massachusetts",

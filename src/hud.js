@@ -21,7 +21,10 @@
   function defaultSettings() {
     return {
       status: "new",
-      notes: ""
+      notes: "",
+      manualName: "",
+      manualHeadline: "",
+      manualLocation: ""
     };
   }
 
@@ -66,6 +69,7 @@
   function getTimezoneDetails() {
     const timezoneHelper = window.SalesHudTimezone;
     const fallback = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const profile = getEffectiveProfile();
 
     if (!timezoneHelper) {
       return {
@@ -90,7 +94,7 @@
       };
     }
 
-    const guess = timezoneHelper.guessTimeZone(state.profile.location);
+    const guess = timezoneHelper.guessTimeZone(profile.location);
     return {
       guess,
       callingWindow: timezoneHelper.getCallingWindow(guess.timeZone)
@@ -141,35 +145,54 @@
     return escapeHtml(value || fallback);
   }
 
+  function getEffectiveProfile() {
+    return {
+      ...state.profile,
+      name: state.settings.manualName || state.profile.name,
+      headline: state.settings.manualHeadline || state.profile.headline,
+      location: state.settings.manualLocation || state.profile.location
+    };
+  }
+
+  function manualValue(fieldName) {
+    return escapeHtml(state.settings[fieldName] || "");
+  }
+
   function buildLeadSummary() {
+    const profile = getEffectiveProfile();
     const lines = [
-      state.profile.name && `Lead: ${state.profile.name}`,
-      state.profile.headline && `Headline: ${state.profile.headline}`,
-      state.profile.location && `Location: ${state.profile.location}`,
-      state.profile.currentCompany && `Company: ${state.profile.currentCompany}`,
-      state.profile.about && `Context: ${truncate(state.profile.about, 240)}`,
-      `LinkedIn: ${state.profile.url}`
+      profile.name && `Lead: ${profile.name}`,
+      profile.headline && `Headline: ${profile.headline}`,
+      profile.location && `Location: ${profile.location}`,
+      profile.currentCompany && `Company: ${profile.currentCompany}`,
+      profile.about && `Context: ${truncate(profile.about, 240)}`,
+      `LinkedIn: ${profile.url}`
     ].filter(Boolean);
 
     return lines.join("\n");
   }
 
   function buildDebugSummary() {
+    const profile = getEffectiveProfile();
     return [
-      `URL: ${state.profile.url}`,
-      `Name: ${state.profile.name || "(missing)"}`,
-      `Headline: ${state.profile.headline || "(missing)"}`,
-      `Location: ${state.profile.location || "(missing)"}`,
-      `About: ${truncate(state.profile.about, 220) || "(missing)"}`,
+      `URL: ${profile.url}`,
+      `Name: ${profile.name || "(missing)"}`,
+      `Headline: ${profile.headline || "(missing)"}`,
+      `Location: ${profile.location || "(missing)"}`,
+      `Auto name: ${state.profile.name || "(missing)"}`,
+      `Auto headline: ${state.profile.headline || "(missing)"}`,
+      `Auto location: ${state.profile.location || "(missing)"}`,
+      `About: ${truncate(profile.about, 220) || "(missing)"}`,
       "Visible text sample:",
       ...(state.profile.debugLines || []).slice(0, 30).map((line, index) => `${index + 1}. ${line}`)
     ].join("\n");
   }
 
   function buildCallOpener() {
-    const name = state.profile.name ? state.profile.name.split(/\s+/)[0] : "there";
-    const company = state.profile.currentCompany || "your team";
-    const role = (state.profile.currentRole || state.profile.headline || "your work")
+    const profile = getEffectiveProfile();
+    const name = profile.name ? profile.name.split(/\s+/)[0] : "there";
+    const company = profile.currentCompany || "your team";
+    const role = (profile.currentRole || profile.headline || "your work")
       .split(/\s+(?:at|@)\s+/i)[0]
       .trim();
 
@@ -227,6 +250,8 @@
   function timeCardHtml() {
     const timezoneDetails = getTimezoneDetails();
     const confidenceClass = timezoneDetails.guess.confidence === "high" ? "high" : "low";
+    const profile = getEffectiveProfile();
+    const sourceLabel = state.settings.manualLocation ? "manual" : "auto";
 
     return `
       <section class="time-card ${escapeHtml(timezoneDetails.callingWindow.status)}" data-time-card>
@@ -239,7 +264,7 @@
         </div>
         <p data-time-detail>${escapeHtml(timezoneDetails.callingWindow.detail)}</p>
         <p class="timezone-note">
-          Source location: ${escapeHtml(state.profile.location || "not detected")}
+          Source location (${sourceLabel}): ${escapeHtml(profile.location || "not detected")}
         </p>
         <p class="timezone-note ${confidenceClass}" title="${escapeHtml(timezoneDetails.guess.reason)}">
           ${escapeHtml(timezoneDetails.guess.label)} - ${escapeHtml(timezoneDetails.guess.timeZone)}
@@ -250,6 +275,7 @@
 
   function render() {
     updateHostPosition();
+    const profile = getEffectiveProfile();
 
     shadow.innerHTML = `
       <style>
@@ -425,6 +451,35 @@
           margin-top: 4px;
         }
 
+        .field-grid {
+          display: grid;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .mini-label {
+          color: #475569;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+        }
+
+        .inline-input {
+          border: 1px solid #cbd5e1;
+          border-radius: 9px;
+          color: #172033;
+          font: inherit;
+          padding: 7px 9px;
+          width: 100%;
+        }
+
+        .inline-input:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+          outline: none;
+        }
+
         .controls {
           display: grid;
           gap: 10px;
@@ -514,10 +569,24 @@
           ${timeCardHtml()}
 
           <section class="profile-card">
-            <div class="profile-name">${profileFallback(state.profile.name, "LinkedIn profile")}</div>
-            <div>${profileFallback(state.profile.headline, "Headline not visible yet")}</div>
-            <div class="muted">${profileFallback(state.profile.location, "Location not visible")}</div>
-            <div class="context">${profileFallback(truncate(state.profile.about, 180), "Open the About section for richer call context.")}</div>
+            <div class="profile-name">${profileFallback(profile.name, "LinkedIn profile")}</div>
+            <div>${profileFallback(profile.headline, "Headline not visible yet")}</div>
+            <div class="muted">${profileFallback(profile.location, "Location not visible")}</div>
+            <div class="context">${profileFallback(truncate(profile.about, 180), "Open the About section for richer call context.")}</div>
+            <div class="field-grid">
+              <div>
+                <div class="mini-label">Correct name</div>
+                <input class="inline-input" data-manual-name value="${manualValue("manualName")}" placeholder="${profileFallback(state.profile.name, "Type lead name")}">
+              </div>
+              <div>
+                <div class="mini-label">Correct headline</div>
+                <input class="inline-input" data-manual-headline value="${manualValue("manualHeadline")}" placeholder="${profileFallback(state.profile.headline, "Type headline")}">
+              </div>
+              <div>
+                <div class="mini-label">Correct city / country for time zone</div>
+                <input class="inline-input" data-manual-location value="${manualValue("manualLocation")}" placeholder="${profileFallback(state.profile.location, "Example: Greater Toronto Area, Canada")}">
+              </div>
+            </div>
           </section>
 
           <section class="controls">
@@ -552,6 +621,9 @@
     const toggleButton = shadow.querySelector("[data-action='toggle-minimize']");
     const statusSelect = shadow.querySelector("[data-status]");
     const notesField = shadow.querySelector("[data-notes]");
+    const manualNameField = shadow.querySelector("[data-manual-name]");
+    const manualHeadlineField = shadow.querySelector("[data-manual-headline]");
+    const manualLocationField = shadow.querySelector("[data-manual-location]");
     const openerButton = shadow.querySelector("[data-action='copy-opener']");
     const summaryButton = shadow.querySelector("[data-action='copy-summary']");
     const debugButton = shadow.querySelector("[data-action='copy-debug']");
@@ -580,6 +652,10 @@
       });
     }
 
+    bindManualField(manualNameField, "manualName", "Name saved.");
+    bindManualField(manualHeadlineField, "manualHeadline", "Headline saved.");
+    bindManualField(manualLocationField, "manualLocation", "Location saved. Time zone updated.");
+
     if (openerButton) {
       openerButton.addEventListener("click", () => copyText(buildCallOpener(), "Opener copied."));
     }
@@ -595,6 +671,21 @@
     if (dragHandle) {
       bindDragging(dragHandle);
     }
+  }
+
+  function bindManualField(field, settingName, message) {
+    if (!field) {
+      return;
+    }
+
+    field.addEventListener("input", async (event) => {
+      state.settings[settingName] = event.target.value.trim();
+      await saveProfileSettings();
+      refreshTimeCard();
+      setFeedback(message);
+    });
+
+    field.addEventListener("change", () => render());
   }
 
   function bindDragging(dragHandle) {
@@ -662,7 +753,10 @@
     await setInStorage({
       [storageKey()]: {
         status: state.settings.status,
-        notes: state.settings.notes
+        notes: state.settings.notes,
+        manualName: state.settings.manualName,
+        manualHeadline: state.settings.manualHeadline,
+        manualLocation: state.settings.manualLocation
       }
     });
   }
