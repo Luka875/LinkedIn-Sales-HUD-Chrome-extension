@@ -340,6 +340,130 @@
     );
   }
 
+  function getTextNodeRect(node) {
+    const range = document.createRange();
+
+    try {
+      range.selectNodeContents(node);
+      const rect = Array.from(range.getClientRects()).find((candidate) => candidate.width > 0 && candidate.height > 0);
+      return rect || node.parentElement.getBoundingClientRect();
+    } finally {
+      range.detach();
+    }
+  }
+
+  function getPositionedTextEntries() {
+    const entries = [];
+    const maxLeft = Math.max(760, window.innerWidth * 0.78);
+    const maxTop = Math.max(520, window.innerHeight * 0.68);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const text = cleanText(node.nodeValue);
+
+        if (
+          !text ||
+          !node.parentElement ||
+          node.parentElement.closest("#sales-hud-root") ||
+          !isVisibleElement(node.parentElement)
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = cleanText(node.nodeValue);
+      const rect = getTextNodeRect(node);
+
+      if (
+        !rect ||
+        rect.top < 45 ||
+        rect.top > maxTop ||
+        rect.left < 0 ||
+        rect.left > maxLeft ||
+        rect.width < 8 ||
+        rect.height < 6 ||
+        text.length > 180
+      ) {
+        continue;
+      }
+
+      const style = window.getComputedStyle(node.parentElement);
+      entries.push({
+        text,
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        fontSize: Number.parseFloat(style.fontSize) || 0,
+        fontWeight: Number.parseInt(style.fontWeight, 10) || 400
+      });
+    }
+
+    const seen = new Set();
+
+    return entries
+      .sort((first, second) => first.top - second.top || first.left - second.left)
+      .filter((entry) => {
+        if (isTopCardNoise(entry.text)) {
+          return false;
+        }
+
+        const key = `${entry.text.toLowerCase()}@${Math.round(entry.top / 4)}:${Math.round(entry.left / 4)}`;
+
+        if (seen.has(key)) {
+          return false;
+        }
+
+        seen.add(key);
+        return true;
+      });
+  }
+
+  function getPositionedProfile() {
+    const entries = getPositionedTextEntries();
+    const likelyCardEntries = entries.filter((entry) => {
+      const text = entry.text;
+      return (
+        entry.left < Math.max(560, window.innerWidth * 0.58) &&
+        !/^sales insights$/i.test(text) &&
+        !/^key signals$/i.test(text) &&
+        !/^people who can introduce you$/i.test(text) &&
+        !/^recently hired by/i.test(text) &&
+        !/^shared group/i.test(text)
+      );
+    });
+    const nameEntry =
+      likelyCardEntries.find((entry) => looksLikeName(entry.text) && (entry.fontSize >= 16 || entry.fontWeight >= 600)) ||
+      likelyCardEntries.find((entry) => looksLikeName(entry.text));
+    const afterNameEntries = nameEntry
+      ? likelyCardEntries.filter((entry) => entry.top >= nameEntry.top && entry.top <= nameEntry.top + 150)
+      : likelyCardEntries.slice(0, 30);
+    const locationEntry =
+      afterNameEntries.find((entry) => looksLikeLocation(normalizeLocationCandidate(entry.text))) ||
+      likelyCardEntries.find((entry) => looksLikeLocation(normalizeLocationCandidate(entry.text)));
+    const headlineEntry = afterNameEntries.find((entry) => {
+      const text = entry.text;
+
+      return (
+        (!nameEntry || entry.top >= nameEntry.top) &&
+        text !== (nameEntry && nameEntry.text) &&
+        text !== (locationEntry && locationEntry.text) &&
+        looksLikeHeadline(text, nameEntry ? cleanNameCandidate(nameEntry.text) : "")
+      );
+    });
+
+    return {
+      name: nameEntry ? cleanNameCandidate(nameEntry.text) : "",
+      headline: headlineEntry ? headlineEntry.text : "",
+      location: locationEntry ? normalizeLocationCandidate(locationEntry.text) : detectKnownLocation(afterNameEntries.map((entry) => entry.text)),
+      debugLines: likelyCardEntries.slice(0, 45).map((entry) => `${entry.text} [${entry.left},${entry.top}]`)
+    };
+  }
+
   function getVisibleTextLines(root) {
     const scope = root || document.querySelector("main") || document.body;
     const lines = [];
@@ -481,6 +605,7 @@
   }
 
   function getVisibleProfile() {
+    const positionedProfile = getPositionedProfile();
     const lines = getViewportTextLines();
     const nameIndex = lines.findIndex(looksLikeName);
     const name = nameIndex >= 0 ? cleanNameCandidate(lines[nameIndex]) : "";
@@ -499,10 +624,13 @@
       "";
 
     return {
-      name,
-      headline,
-      location,
-      debugLines: lines.slice(0, 30)
+      name: positionedProfile.name || name,
+      headline: positionedProfile.headline || headline,
+      location: positionedProfile.location || location,
+      debugLines: [
+        ...positionedProfile.debugLines,
+        ...lines.slice(0, 30)
+      ].slice(0, 60)
     };
   }
 
