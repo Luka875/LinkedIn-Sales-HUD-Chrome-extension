@@ -29,7 +29,7 @@ If the HUD does not appear after updating files, return to `chrome://extensions`
 The extension runs three content scripts on LinkedIn. The HUD only displays on profile URLs:
 
 - `src/timezone-map.js` maps common city, region, and country strings to IANA time zones and turns local time into a calling recommendation.
-- `src/scraper.js` extracts visible profile details such as name, headline, location, about text, and experience snippets.
+- `src/scraper.js` extracts visible profile details such as name, headline, location, about text, and experience snippets, with title/meta fallbacks for LinkedIn markup changes.
 - `src/hud.js` renders the Sales HUD, persists notes/status locally, and provides copy actions.
 - `popup/popup.html` and `popup/popup.js` provide the toolbar popup and manual HUD injection button.
 
