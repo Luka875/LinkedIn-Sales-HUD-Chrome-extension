@@ -37,6 +37,9 @@
     "beograd",
     "novi sad",
     "new york",
+    "detroit",
+    "detroit metropolitan area",
+    "michigan",
     "san francisco",
     "los angeles",
     "london",
@@ -73,6 +76,9 @@
   ];
 
   const LOCATION_HINTS = [
+    { pattern: /\bdetroit metropolitan area\b/i, label: "Detroit Metropolitan Area, United States" },
+    { pattern: /\bdetroit\b/i, label: "Detroit, Michigan, United States" },
+    { pattern: /\bmichigan\b/i, label: "Michigan, United States" },
     { pattern: /\bgreater toronto area\b/i, label: "Greater Toronto Area, Canada" },
     { pattern: /\btoronto\b/i, label: "Toronto, Ontario, Canada" },
     { pattern: /\bontario\b/i, label: "Ontario, Canada" },
