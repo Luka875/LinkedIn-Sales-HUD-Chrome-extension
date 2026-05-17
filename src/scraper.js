@@ -43,6 +43,8 @@
     "berlin",
     "paris",
     "toronto",
+    "greater toronto area",
+    "ontario",
     "sydney"
   ];
 
@@ -54,6 +56,14 @@
     /^connect$/i,
     /^follow$/i,
     /^more$/i,
+    /^home$/i,
+    /^my network$/i,
+    /^jobs$/i,
+    /^messaging$/i,
+    /^notifications$/i,
+    /^sales nav$/i,
+    /^for business$/i,
+    /^save in sales navigator$/i,
     /^open to$/i,
     /^premium$/i,
     /^verified$/i,
@@ -327,6 +337,111 @@
     return uniqueLines(lines);
   }
 
+  function getViewportTextLines() {
+    const selectors = [
+      "main h1",
+      "main h2",
+      "main h3",
+      "main span",
+      "main div",
+      "main p",
+      "section h1",
+      "section h2",
+      "section h3",
+      "section span",
+      "section div",
+      "section p"
+    ].join(",");
+    const lines = [];
+    const maxLeft = Math.max(520, window.innerWidth * 0.68);
+    const maxTop = Math.max(430, window.innerHeight * 0.55);
+
+    for (const element of document.querySelectorAll(selectors)) {
+      if (!isVisibleElement(element)) {
+        continue;
+      }
+
+      const rect = element.getBoundingClientRect();
+
+      if (
+        rect.top < 35 ||
+        rect.top > maxTop ||
+        rect.left < 0 ||
+        rect.left > maxLeft ||
+        rect.width < 20 ||
+        rect.height < 8
+      ) {
+        continue;
+      }
+
+      cleanText(element.innerText || element.textContent)
+        .split(/\n+/)
+        .map(cleanText)
+        .filter((line) => line.length > 1 && line.length < 180)
+        .forEach((line) => lines.push(line));
+    }
+
+    return uniqueLines(lines).filter((line) => !isTopCardNoise(line));
+  }
+
+  function cleanNameCandidate(line) {
+    return cleanText(line)
+      .replace(/\s*[·•]\s*(?:1st|2nd|3rd|\d+(?:st|nd|rd|th))\b.*$/i, "")
+      .replace(/\s+\b(?:1st|2nd|3rd|\d+(?:st|nd|rd|th))\b.*$/i, "")
+      .replace(/\s*\([^)]{1,40}\)\s*$/g, "")
+      .replace(/\s+verified\s*$/i, "")
+      .trim();
+  }
+
+  function looksLikeName(line) {
+    const text = cleanNameCandidate(line);
+    const words = text.split(/\s+/).filter(Boolean);
+
+    if (
+      words.length < 2 ||
+      words.length > 5 ||
+      looksLikeLocation(text) ||
+      looksLikeWebsiteOrHandle(text) ||
+      text.includes("|") ||
+      /[,/@]/.test(text)
+    ) {
+      return false;
+    }
+
+    return words.every((word) => /^[A-Z][A-Za-z'’-]{1,}$/.test(word));
+  }
+
+  function normalizeLocationCandidate(line) {
+    return cleanText(line)
+      .replace(/\s*[·•]\s*Contact info.*$/i, "")
+      .replace(/\s*Contact info.*$/i, "")
+      .trim();
+  }
+
+  function getVisibleProfile() {
+    const lines = getViewportTextLines();
+    const nameIndex = lines.findIndex(looksLikeName);
+    const name = nameIndex >= 0 ? cleanNameCandidate(lines[nameIndex]) : "";
+    const searchStart = nameIndex >= 0 ? nameIndex + 1 : 0;
+    const searchWindow = lines.slice(searchStart, searchStart + 14);
+    const location = normalizeLocationCandidate(
+      searchWindow.find((line) => looksLikeLocation(normalizeLocationCandidate(line))) ||
+      lines.find((line) => looksLikeLocation(normalizeLocationCandidate(line))) ||
+      ""
+    );
+    const headline =
+      searchWindow.find((line) => looksLikeHeadline(line, name)) ||
+      lines.find((line) => looksLikeHeadline(line, name)) ||
+      "";
+
+    return {
+      name,
+      headline,
+      location,
+      debugLines: lines.slice(0, 30)
+    };
+  }
+
   function getVisibleLines(root) {
     if (!root) {
       return [];
@@ -412,6 +527,7 @@
   }
 
   function getName() {
+    const visibleProfile = getVisibleProfile();
     const jsonLdProfile = getJsonLdProfile();
     const titleParts = getTitleParts();
     const descriptionParts = getDescriptionParts();
@@ -425,6 +541,7 @@
     });
 
     return (
+      visibleProfile.name ||
       getNameFromDom() ||
       jsonLdProfile.name ||
       titleParts.name ||
@@ -436,6 +553,7 @@
 
   function getHeadline() {
     const topCard = getTopCard();
+    const visibleProfile = getVisibleProfile();
     const jsonLdProfile = getJsonLdProfile();
     const titleParts = getTitleParts();
     const descriptionParts = getDescriptionParts();
@@ -447,6 +565,10 @@
     ], topCard || document);
 
     const name = getName();
+
+    if (visibleProfile.headline) {
+      return visibleProfile.headline;
+    }
 
     if (directHeadline && looksLikeHeadline(directHeadline, name)) {
       return directHeadline;
@@ -467,10 +589,6 @@
 
     if (!text || isTopCardNoise(text) || /\d/.test(text)) {
       return false;
-    }
-
-    if (text.includes(",")) {
-      return true;
     }
 
     return LOCATION_KEYWORDS.some((keyword) => normalized.includes(keyword));
@@ -509,6 +627,7 @@
   }
 
   function getLocation() {
+    const visibleProfile = getVisibleProfile();
     const jsonLdProfile = getJsonLdProfile();
     const directLocation = firstText([
       ".pv-text-details__left-panel span.text-body-small.inline.t-black--light.break-words",
@@ -521,9 +640,10 @@
     }
 
     return (
+      visibleProfile.location ||
       (jsonLdProfile.location && looksLikeLocation(jsonLdProfile.location) ? jsonLdProfile.location : "") ||
-      getTopCardLines().find(looksLikeLocation) ||
-      getVisibleTextLines().find(looksLikeLocation) ||
+      normalizeLocationCandidate(getTopCardLines().find((line) => looksLikeLocation(normalizeLocationCandidate(line)))) ||
+      normalizeLocationCandidate(getVisibleTextLines().find((line) => looksLikeLocation(normalizeLocationCandidate(line)))) ||
       directLocation ||
       jsonLdProfile.location
     );
@@ -555,7 +675,8 @@
   }
 
   function snapshot() {
-    const headline = getHeadline();
+    const visibleProfile = getVisibleProfile();
+    const headline = visibleProfile.headline || getHeadline();
     const experience = getExperienceLines();
     const currentRole = experience[0] || headline;
     const currentCompany = getCompanyFromHeadline(headline) || experience[1] || "";
@@ -563,13 +684,14 @@
     return {
       profileKey: getProfileKey(),
       url: window.location.href,
-      name: getName(),
+      name: visibleProfile.name || getName(),
       headline,
-      location: getLocation(),
+      location: visibleProfile.location || getLocation(),
       about: getAbout(),
       currentRole,
       currentCompany,
       experience,
+      debugLines: visibleProfile.debugLines,
       scrapedAt: new Date().toISOString()
     };
   }

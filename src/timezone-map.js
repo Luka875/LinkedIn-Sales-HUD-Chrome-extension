@@ -42,11 +42,10 @@
         "nashville",
         "st louis",
         "kansas city",
-        "toronto",
         "winnipeg",
         "illinois",
         "texas",
-        "ontario"
+        "manitoba"
       ]
     },
     {
@@ -63,6 +62,9 @@
         "atlanta",
         "charlotte",
         "raleigh",
+        "toronto",
+        "greater toronto area",
+        "ontario",
         "montreal",
         "ottawa",
         "massachusetts",
